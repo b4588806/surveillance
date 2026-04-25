@@ -1797,41 +1797,140 @@ function matchF(s){
   if(curF==='all') return true;
   return s.cat===curF;
 }
-function matchQ(s,q){
-  if(!q) return true;
-  return[s.hull,s.name,s.sk,s.type].some(v=>v&&String(v).toLowerCase().includes(q));
-}
 
-// ── 渲染列表 ─────────────────────────────────────────────
+// ── Fuzzy normalize：去除空格與橫槓再比對 ─────────────────────
+function _norm(str){ return String(str||'').toLowerCase().replace(/[\s\-_]/g,''); }
+
+// fuzzyScore：回傳 0(不符合) / 1(模糊) / 2(完整包含) / 3(完全相等)
+function fuzzyScore(s,q){
+  if(!q) return 1;
+  var nq=_norm(q);
+  // 欄位依序：hull > name > sk > type
+  var fields=[s.hull,s.name,s.sk,s.type];
+  var best=0;
+  for(var i=0;i<fields.length;i++){
+    var nf=_norm(fields[i]);
+    if(!nf) continue;
+    if(nf===nq)           { best=Math.max(best,3); break; }
+    if(nf.startsWith(nq)) { best=Math.max(best,2); }
+    else if(nf.includes(nq)){ best=Math.max(best,2); }
+    else {
+      // 模糊：逐字符連續比對（subsequence）
+      var fi=0;
+      for(var j=0;j<nq.length;j++){
+        var idx=nf.indexOf(nq[j],fi);
+        if(idx===-1){ fi=-1; break; }
+        fi=idx+1;
+      }
+      if(fi!==-1) best=Math.max(best,1);
+    }
+  }
+  return best;
+}
+function matchQ(s,q){ return fuzzyScore(s,q)>0; }
+
+// ── 渲染列表（虛擬捲動：每批 50 筆，滾動到底加載） ──────────
+var _visList=[];      // 當前篩選結果（已排序）
+var _visLoaded=0;     // 已渲染筆數
+var _BATCH=50;        // 每批渲染數量
+
 function renderList(){
   const q=curQ.toLowerCase().trim();
-  const vis=DB.filter(s=>matchF(s)&&matchQ(s,q));
-  document.getElementById('cnt').textContent=vis.length;
+  // 計算 fuzzyScore 並排序：score 高的優先，同分保持原順序
+  _visList=DB.reduce(function(acc,s){
+    if(!matchF(s)) return acc;
+    var sc=fuzzyScore(s,q);
+    if(sc>0) acc.push({s:s,sc:sc});
+    return acc;
+  },[]);
+  if(q){
+    _visList.sort(function(a,b){ return b.sc-a.sc; });
+  }
+  document.getElementById('cnt').textContent=_visList.length;
   const el=document.getElementById('slist');
   const nr=document.getElementById('noRes');
-  if(!vis.length){el.innerHTML='';nr.style.display='flex';return;}
+  if(!_visList.length){el.innerHTML='';nr.style.display='flex';return;}
   nr.style.display='none';
-  let html='';
-  for(let i=0;i<vis.length;i++){
-    const s=vis[i],isSel=selId===s.id,c=tColor(s.threat);
-    html+='<div class="row'+(isSel?' sel':'')+'" data-id="'+s.id+'">'
-      +'<div class="rid '+s.nat+'">'+(q?hlT(s.hull,q):esc(s.hull))+'</div>'
-      +'<div><div class="rn">'+(q?hlT(s.name,q):esc(s.name))+'</div>'
-      +'<div class="rc">'+esc(s.sk)+'</div></div>'
-      +'<div class="rf">'+natFlag(s.nat)+'</div>'
-      +'<div class="rt">'+esc(s.type.substring(0,20))+'</div>'
-      +'<div class="ry">'+s.year+'</div>'
-      +'<div class="rtd"><div class="tdot" style="background:'+c+';box-shadow:0 0 4px '+c+'"></div>'
-      +'<span class="tlt">'+tLabel(s.threat)+'</span></div>'
-      +'</div>';
+  _visLoaded=0;
+  el.innerHTML='';
+  _appendBatch(q);
+  if(_visList.length===1&&q) pick(_visList[0].s.id);
+}
+
+function _rowHtml(s,q,isSel){
+  const c=tColor(s.threat);
+  const nq=q?_norm(q):'';
+  // highlight：對原始值做 norm 比對位置，但 display 維持原始值
+  function hlFuzzy(raw){
+    if(!q||!raw) return esc(raw||'');
+    var nraw=_norm(raw);
+    if(!nraw.includes(nq)) return esc(raw);
+    // 找出 norm 版本的 match 起點，映射回 raw 顯示
+    var idx=nraw.indexOf(nq);
+    if(idx<0) return esc(raw);
+    // 簡易：在 raw 中找第一個 nq 的字元序列
+    var result='',fi=0,inMatch=false,matchStart=-1,matchEnd=-1;
+    var nqArr=nq.split('');
+    var rawNorm=raw.toLowerCase().replace(/[\s\-_]/g,'');
+    // 用原始 q 嘗試直接 highlight（已含空格的情況）
+    try{
+      var re=new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi');
+      if(re.test(raw)) return esc(raw).replace(new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'),'<span class="hl">$1</span>');
+    }catch(e){}
+    // 去除橫槓後的 q 嘗試
+    try{
+      var q2=q.replace(/[\s\-_]/g,'');
+      var re2=new RegExp('('+q2.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi');
+      var raw2=raw.replace(/[\-_]/g,'');
+      if(re2.test(raw2)){
+        return raw2.replace(re2,'<span class="hl">$1</span>').replace(/</g,function(m,o,s2){
+          // 只替換非 HTML 標籤的 <
+          return m;
+        });
+      }
+    }catch(e){}
+    return esc(raw);
   }
-  el.innerHTML=html;
-  if(vis.length===1&&q) pick(vis[0].id);
+  return '<div class="row'+(isSel?' sel':'')+'" data-id="'+s.id+'">'
+    +'<div class="rid '+s.nat+'">'+hlFuzzy(s.hull)+'</div>'
+    +'<div><div class="rn">'+hlFuzzy(s.name)+'</div>'
+    +'<div class="rc">'+esc(s.sk)+'</div></div>'
+    +'<div class="rf">'+natFlag(s.nat)+'</div>'
+    +'<div class="rt">'+esc(s.type.substring(0,20))+'</div>'
+    +'<div class="ry">'+s.year+'</div>'
+    +'<div class="rtd"><div class="tdot" style="background:'+c+';box-shadow:0 0 4px '+c+'"></div>'
+    +'<span class="tlt">'+tLabel(s.threat)+'</span></div>'
+    +'</div>';
+}
+
+function _appendBatch(q){
+  var el=document.getElementById('slist');
+  if(!el) return;
+  var end=Math.min(_visLoaded+_BATCH, _visList.length);
+  var html='';
+  for(var i=_visLoaded;i<end;i++){
+    var item=_visList[i];
+    html+=_rowHtml(item.s, q||curQ.toLowerCase().trim(), selId===item.s.id);
+  }
+  el.insertAdjacentHTML('beforeend',html);
+  _visLoaded=end;
+  // 顯示剩餘筆數提示
+  var sentinel=document.getElementById('slist-sentinel');
+  if(sentinel) sentinel.remove();
+  if(_visLoaded<_visList.length){
+    var rem=_visList.length-_visLoaded;
+    el.insertAdjacentHTML('beforeend',
+      '<div id="slist-sentinel" style="text-align:center;padding:10px 0;font-size:9px;color:var(--t3);letter-spacing:1px">↓ 繼續捲動載入 (還有 '+rem+' 筆)</div>'
+    );
+  }
 }
 
 // ── 渲染詳情 ─────────────────────────────────────────────
 const CAPLABELS={aa:'對空作戰',ag:'對地/艦打擊',ew:'電子戰/感知',st:'匿蹤能力'};
 const CAPCOLS={aa:'cf1',ag:'cf2',ew:'cf5',st:'cf3'};
+
+// 不顯示方位距離框的類型（地理位置 / 報告點）
+var _NO_BEARING_CATS=['loc','mrp','geo','location','mrp-point'];
 
 function renderDetail(s){
   const isStlth=s.cap.st>50;
@@ -1845,6 +1944,44 @@ function renderDetail(s){
     return '<div class="cr"><div class="cl"><span class="clb">'+CAPLABELS[k]+'</span><span class="cln">'+v+'/100</span></div>'
       +'<div class="ct"><div class="cf '+cl+'" style="width:0" data-val="'+v+'"></div></div></div>';
   }).join('');
+
+  // ── 方位距離輸入框（排除地理/報告點類型）─────────────────────
+  var catStr=(s.cat||'').toLowerCase();
+  var typeStr=(s.type||'').toLowerCase();
+  var isGeoOrMRP=_NO_BEARING_CATS.some(function(k){
+    return catStr.includes(k)||typeStr.includes(k);
+  });
+  var bearingBlock='';
+  if(!isGeoOrMRP){
+    // 取出已記錄的幅向/距離（若已在情資記錄中）
+    var existing=intelLog.find(function(e){return e.hull===s.hull;});
+    var bv=existing?existing.bearing:'';
+    var dv=existing?existing.dist:'';
+    bearingBlock='<div class="sec" id="dBearingSec">'
+      +'<div class="stt">方位距離標定</div>'
+      +'<div style="display:flex;flex-direction:column;gap:6px;padding:4px 0">'
+        +'<div style="display:flex;align-items:center;gap:6px">'
+          +'<span style="font-size:8px;color:var(--t3);letter-spacing:1px;width:32px;flex-shrink:0">幅向°</span>'
+          +'<input id="dBearing" class="ip-field-input" type="text" inputmode="numeric" '
+            +'value="'+esc(bv)+'" placeholder="000 ~ 359" '
+            +'style="flex:1;background:rgba(0,212,255,.07);border:1px solid var(--bdr2);border-radius:4px;color:var(--t1);font-size:14px;padding:5px 8px;font-family:monospace;outline:none;min-width:0"'
+            +' oninput="dSyncBearing(\''+esc(s.hull)+'\')">'
+        +'</div>'
+        +'<div style="display:flex;align-items:center;gap:6px">'
+          +'<span style="font-size:8px;color:var(--t3);letter-spacing:1px;width:32px;flex-shrink:0">距離</span>'
+          +'<input id="dDist" class="ip-field-input" type="text" inputmode="decimal" '
+            +'value="'+esc(dv)+'" placeholder="海浬 (nm)" '
+            +'style="flex:1;background:rgba(0,212,255,.07);border:1px solid var(--bdr2);border-radius:4px;color:var(--t1);font-size:14px;padding:5px 8px;font-family:monospace;outline:none;min-width:0"'
+            +' oninput="dSyncBearing(\''+esc(s.hull)+'\')">'
+        +'</div>'
+        +'<button onclick="dCommitBearing(\''+esc(s.hull)+'\')" '
+          +'style="margin-top:2px;width:100%;padding:7px;background:rgba(0,212,255,.1);border:1px solid rgba(0,212,255,.4);border-radius:5px;color:var(--c1);font-size:10px;letter-spacing:2px;cursor:pointer;font-family:inherit;transition:.15s"'
+          +' onmouseover="this.style.background=\'rgba(0,212,255,.22)\'" onmouseout="this.style.background=\'rgba(0,212,255,.1)\'">'
+          +'📍 手動標圖 → 加入情資</button>'
+      +'</div>'
+    +'</div>';
+  }
+
   return '<div class="hero">'
     +'<div class="nat-bar nat-'+s.nat+'">'+natFlag(s.nat)+'　'+natName(s.nat)+'　/　'+svcLabel(s.cat)+'</div>'
     +'<div class="dhull '+s.nat+'">'+esc(s.hull)+'</div>'
@@ -1858,8 +1995,56 @@ function renderDetail(s){
     +'<div class="sec"><div class="stt">基本規格</div>'+specsHtml+'</div>'
     +'<div class="sec"><div class="stt">武裝系統</div>'+wHtml+'</div>'
     +'<div class="sec"><div class="stt">作戰能力評估</div>'+cHtml+'</div>'
+    +bearingBlock
     +'<div class="sec"><div class="stt">說明</div><p class="desc">'+esc(s.desc)+'</p>'
     +'<a class="wlk" href="'+esc(s.wiki)+'" target="_blank">&#127758; 參考資料</a></div>';
+}
+
+// ── 詳情頁方位距離即時同步到情資記錄 ─────────────────────────
+function dSyncBearing(hull){
+  var b=document.getElementById('dBearing');
+  var d=document.getElementById('dDist');
+  if(!b||!d) return;
+  var entry=intelLog.find(function(e){return e.hull===hull;});
+  if(entry){
+    entry.bearing=b.value;
+    entry.dist=d.value;
+    ipBuildPreview();
+  }
+}
+
+// ── 確認標圖：寫入情資記錄（若未存在則新增）─────────────────
+function dCommitBearing(hull){
+  var b=document.getElementById('dBearing');
+  var d=document.getElementById('dDist');
+  if(!b||!d) return;
+  var bv=b.value.trim(), dv=d.value.trim();
+  // 找對應的 DB 項目
+  var item=DB.find(function(s){return s.hull===hull;});
+  if(!item) return;
+  if(!intelSeen[hull]){
+    // 尚未加入情資 → 先 add
+    intelSeen[hull]=true;
+    intelLog.push({hull:item.hull,name:item.name||'',sk:item.sk||'',nat:item.nat||'cn',bearing:bv,dist:dv,note:''});
+  } else {
+    // 已在情資 → 更新
+    var entry=intelLog.find(function(e){return e.hull===hull;});
+    if(entry){entry.bearing=bv;entry.dist=dv;}
+  }
+  ipRender();
+  // 視覺回饋
+  var btn=event.target||document.querySelector('#dBearingSec button');
+  if(btn){
+    var orig=btn.textContent;
+    btn.textContent='✓ 已記錄！';
+    btn.style.borderColor='rgba(34,221,119,.5)';
+    btn.style.color='var(--c4)';
+    setTimeout(function(){btn.textContent=orig;btn.style.borderColor='rgba(0,212,255,.4)';btn.style.color='var(--c1)';},1800);
+  }
+  // 若地圖已開啟即時同步
+  if(typeof MAP!=='undefined'&&MAP&&document.getElementById('pageMap').style.display!=='none'){
+    syncMapFromIntel();
+  }
 }
 
 // ── pick ─────────────────────────────────────────────────
@@ -1869,18 +2054,48 @@ function pick(id){
   const dc=document.getElementById('dcnt');
   dc.style.display='block';dc.innerHTML=renderDetail(DB[id]);dc.scrollTop=0;
   setTimeout(()=>{dc.querySelectorAll('.cf[data-val]').forEach(b=>{b.style.width=b.dataset.val+'%';});},80);
-  renderList();
-  setTimeout(()=>{const r=document.querySelector('.row.sel');if(r)r.scrollIntoView({block:'nearest',behavior:'smooth'});},60);
+  // 更新列表中選中樣式（不觸發全量重繪）
+  document.querySelectorAll('#slist .row').forEach(function(r){
+    var rid=parseInt(r.dataset.id);
+    r.classList.toggle('sel', rid===id);
+    r.style.borderLeft= rid===id ? '2px solid var(--c1)' : '';
+  });
+  setTimeout(()=>{const r=document.querySelector('#slist .row.sel');if(r)r.scrollIntoView({block:'nearest',behavior:'smooth'});},60);
   if(typeof ipAddShip==='function') ipAddShip(DB[id]);
 }
 
-// ── 搜尋/篩選事件 ────────────────────────────────────────
+// ── 搜尋/篩選事件（Debounce 300ms，防止快速輸入卡頓）──────
 const sbox=document.getElementById('sbox');
 const clrBtn=document.getElementById('clr');
-sbox.addEventListener('input',()=>{curQ=sbox.value;clrBtn.style.display=curQ?'block':'none';renderList();});
-clrBtn.addEventListener('click',()=>{curQ='';sbox.value='';clrBtn.style.display='none';renderList();sbox.focus();});
+var _searchTimer=null;
+sbox.addEventListener('input',function(){
+  curQ=sbox.value;
+  clrBtn.style.display=curQ?'block':'none';
+  clearTimeout(_searchTimer);
+  _searchTimer=setTimeout(function(){
+    renderList();
+  }, 300);
+});
+clrBtn.addEventListener('click',()=>{
+  curQ='';sbox.value='';clrBtn.style.display='none';
+  clearTimeout(_searchTimer);
+  renderList();sbox.focus();
+});
+
+// ── slist 點擊事件 ────────────────────────────────────────
 document.getElementById('slist').addEventListener('click',e=>{
   const r=e.target.closest('[data-id]');if(r) pick(parseInt(r.dataset.id));
+});
+
+// ── slist 滾動：到底自動加載下一批 ──────────────────────────
+document.getElementById('slist').addEventListener('scroll',function(){
+  var el=this;
+  var sentinel=document.getElementById('slist-sentinel');
+  if(!sentinel||_visLoaded>=_visList.length) return;
+  // 距離底部 80px 內觸發加載
+  if(el.scrollTop+el.clientHeight >= el.scrollHeight-80){
+    _appendBatch();
+  }
 });
 document.querySelectorAll('.flt').forEach(btn=>{
   btn.addEventListener('click',()=>{
