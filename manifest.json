@@ -1,0 +1,44 @@
+{
+  "name": "戰術兵力識別系統",
+  "short_name": "戰術識別",
+  "description": "台灣防空識別區兵力識別與戰術標圖系統 — 台北飛航情報區 (Taipei FIR)",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#020b12",
+  "background_color": "#020b12",
+  "lang": "zh-TW",
+  "dir": "ltr",
+  "categories": ["utilities", "navigation"],
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' fill='%23020b12'/%3E%3Ccircle cx='96' cy='96' r='80' fill='none' stroke='%2300d4ff' stroke-width='3' opacity='0.6'/%3E%3Ccircle cx='96' cy='96' r='55' fill='none' stroke='%2300d4ff' stroke-width='1.5' opacity='0.35'/%3E%3Ccircle cx='96' cy='96' r='28' fill='none' stroke='%2300d4ff' stroke-width='1.5' opacity='0.35'/%3E%3Cline x1='16' y1='96' x2='176' y2='96' stroke='%2300d4ff' stroke-width='1' opacity='0.2'/%3E%3Cline x1='96' y1='16' x2='96' y2='176' stroke='%2300d4ff' stroke-width='1' opacity='0.2'/%3E%3Cpolygon points='96,52 104,80 132,80 110,97 118,125 96,108 74,125 82,97 60,80 88,80' fill='none' stroke='%23f0b429' stroke-width='2.5'/%3E%3Ccircle cx='96' cy='96' r='4' fill='%2300d4ff'/%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' fill='%23020b12'/%3E%3Ccircle cx='256' cy='256' r='220' fill='none' stroke='%2300d4ff' stroke-width='6' opacity='0.6'/%3E%3Ccircle cx='256' cy='256' r='150' fill='none' stroke='%2300d4ff' stroke-width='3' opacity='0.35'/%3E%3Ccircle cx='256' cy='256' r='75' fill='none' stroke='%2300d4ff' stroke-width='3' opacity='0.35'/%3E%3Cline x1='36' y1='256' x2='476' y2='256' stroke='%2300d4ff' stroke-width='2' opacity='0.2'/%3E%3Cline x1='256' y1='36' x2='256' y2='476' stroke='%2300d4ff' stroke-width='2' opacity='0.2'/%3E%3Cpolygon points='256,136 278,210 358,210 294,256 318,330 256,284 194,330 218,256 154,210 234,210' fill='none' stroke='%23f0b429' stroke-width='6'/%3E%3Ccircle cx='256' cy='256' r='10' fill='%2300d4ff'/%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "兵力識別",
+      "short_name": "識別",
+      "description": "開啟兵力識別查詢介面",
+      "url": "./index.html#intel"
+    },
+    {
+      "name": "戰術地圖",
+      "short_name": "地圖",
+      "description": "開啟戰術標圖地圖",
+      "url": "./index.html#map"
+    }
+  ],
+  "prefer_related_applications": false,
+  "handle_links": "preferred"
+}
