@@ -4,7 +4,7 @@
 // 版本號更新將觸發快取刷新
 // ══════════════════════════════════════════════════════════════
 
-const CACHE_VERSION = 'tactical-iff-v10';
+const CACHE_VERSION = 'tactical-iff-v11';
 const SHELL_CACHE   = CACHE_VERSION + '-shell';
 const TILE_CACHE    = CACHE_VERSION + '-tiles';
 
